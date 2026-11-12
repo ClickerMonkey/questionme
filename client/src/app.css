@@ -505,6 +505,10 @@ body {
 .q-ack > .i {
   color: var(--ok);
 }
+.q-ack > span {
+  flex: 1;
+  min-width: 0;
+}
 
 /* options */
 .opts {
@@ -1063,4 +1067,9 @@ details.blk[open] {
 .toast {
   width: max-content;
   max-width: min(90vw, 420px);
+}
+.proj-name .muted {
+  font-weight: normal;
+  font-size: var(--text-xs);
+  word-break: break-all;
 }

@@ -84,7 +84,7 @@ export function draw(card, q, ctx, opts = {}) {
     noteWrap.innerHTML = `<textarea rows="2" placeholder="A note (anything the agent should know)" ${disabled ? 'disabled' : ''}>${esc(a?.note || '')}</textarea>`;
     const ta = noteWrap.querySelector('textarea');
     autosize(ta);
-    const saveNote = debounce(() => saveWith(q, ctx, card, { note: ta.value }), 700);
+    const saveNote = debounce(() => saveWith(q, ctx, card, { note: ta.value }, true), 700);
     ta.addEventListener('input', () => {
       autosize(ta);
       flag(card, 'Saving…');
@@ -149,8 +149,8 @@ function plainAnswer(a) {
   return { status, picked, other, text, number, order, note };
 }
 
-/** Save the current answer with these fields changed (keeping what's there). */
-function saveWith(q, ctx, card, patch) {
+/** Save the current answer with these fields changed (keeping what's there). typing: don't redraw the card (it has the focus). */
+function saveWith(q, ctx, card, patch, typing = false) {
   const cur = ctx.answer(q.id);
   const base = cur ? plainAnswer(cur) : { status: 'answered' };
   // a note on its own (no answer yet) is fine for choices and text; elsewhere it waits for an answer
@@ -161,7 +161,7 @@ function saveWith(q, ctx, card, patch) {
   }
   const next = { ...base, ...patch };
   if ('picked' in patch || 'other' in patch || 'text' in patch || 'number' in patch || 'order' in patch) next.status = 'answered';
-  return ctx.save(q.id, next, { quiet: 'note' in patch || 'text' in patch || 'other' in patch || 'number' in patch }).then(
+  return ctx.save(q.id, next, { quiet: typing }).then(
     () => flag(card, 'Saved'),
     (e) => flag(card, e.message, true),
   );
@@ -233,7 +233,7 @@ function inputFor(q, a, el, ctx, disabled) {
           const v = inp.value;
           const patch = multi ? { picked: [...(ctx.answer(q.id)?.status === 'answered' ? ctx.answer(q.id).picked || [] : [])], other: v } : { picked: [], other: v };
           if (!v.trim() && !(patch.picked || []).length) ctx.clear(q.id);
-          else saveWith(q, ctx, card(), patch);
+          else saveWith(q, ctx, card(), patch, true);
         }, 700);
         inp.addEventListener('input', () => {
           other.classList.toggle('on', !!inp.value.trim());
@@ -278,7 +278,7 @@ function inputFor(q, a, el, ctx, disabled) {
         requestAnimationFrame(() => autosize(ta));
       }
       el.append(ta);
-      const save = debounce(() => (ta.value.trim() || ctx.answer(q.id)?.note ? saveWith(q, ctx, card(), { text: ta.value }) : ctx.clear(q.id)), 800);
+      const save = debounce(() => (ta.value.trim() || ctx.answer(q.id)?.note ? saveWith(q, ctx, card(), { text: ta.value }, true) : ctx.clear(q.id)), 800);
       ta.addEventListener('input', () => {
         if (q.multiline) autosize(ta);
         flag(card(), 'Saving…');
@@ -306,7 +306,7 @@ function inputFor(q, a, el, ctx, disabled) {
       const save = debounce(() => {
         const v = Number(box.value);
         if (box.value === '' || !Number.isFinite(v)) return;
-        saveWith(q, ctx, card(), { number: v });
+        saveWith(q, ctx, card(), { number: v }, true);
       }, 600);
       range?.addEventListener('input', () => {
         box.value = range.value;
@@ -359,7 +359,7 @@ function inputFor(q, a, el, ctx, disabled) {
       let ids = [...order];
       paint(ids);
       el.append(ol);
-      const save = debounce(() => saveWith(q, ctx, card(), { order: ids }), 500);
+      const save = debounce(() => saveWith(q, ctx, card(), { order: ids }, true), 500);
       ol.addEventListener('click', (e) => {
         const b = e.target.closest('[data-move]');
         if (!b || b.disabled) return;

@@ -218,8 +218,6 @@ export class Project {
     return this.mutateAnswers(id, (af) => {
       const m: Message = { from, body: body.slice(0, 20000), at: new Date().toISOString(), seq: ++af.seq };
       (af.threads[qid] ??= []).push(m);
-      // the agent wrote it: it has read what came before
-      if (from === 'agent') af.readSeq = Math.max(af.readSeq, m.seq);
       return m;
     });
   }

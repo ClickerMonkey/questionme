@@ -510,7 +510,7 @@ function afterChange(qid, { redraw = false, quietVis = false } = {}) {
       view.shown.add(q.id);
       revealed.push(q.id);
     }
-    if (!now && view.filter !== 'hidden' && view.filter !== 'all') view.shown.delete(q.id);
+    if (!now && view.filter !== 'hidden') view.shown.delete(q.id);
     if (view.filter === 'hidden' && now) view.shown.delete(q.id);
   }
   const changedVis = allQuestions(view.data.set).some((q) => before.question(q.id) !== view.vis.question(q.id));
@@ -522,14 +522,19 @@ function afterChange(qid, { redraw = false, quietVis = false } = {}) {
       view.index = at >= 0 ? at : Math.min(view.index, view.order.length - 1);
       paintCardNav();
     } else {
-      const y = scrollY;
       const anchor = qid ? view.cards.get(qid) : null;
       const top = anchor?.getBoundingClientRect().top;
-      paintBody();
+      const changed = allQuestions(view.data.set).filter((q) => before.question(q.id) !== view.vis.question(q.id)).map((q) => q.id);
+      if (!patchList(changed)) {
+        const y = scrollY;
+        paintBody();
+        scrollTo(0, y);
+      }
+      // keep the card you touched where it was on screen
       const again = qid ? view.cards.get(qid) : null;
       if (again && top !== undefined) scrollTo(0, scrollY + again.getBoundingClientRect().top - top);
-      else scrollTo(0, y);
       for (const id of revealed) view.cards.get(id)?.classList.add('revealed');
+      for (const s of view.data.set.sections) paintSectionTools(s.id);
     }
     if (revealed.length) toast(`${revealed.length} follow-up question${revealed.length === 1 ? '' : 's'} opened`);
   } else if (view.mode === 'list') {
@@ -537,6 +542,42 @@ function afterChange(qid, { redraw = false, quietVis = false } = {}) {
     if (q) paintSectionTools(q.section);
   }
   paintProgress();
+}
+
+/** Add and take away just the cards whose visibility changed. False when a section has to appear (draw it all). */
+function patchList(changed) {
+  const set = view.data.set;
+  for (const id of changed) {
+    const q = questionById(set, id);
+    if (!q) continue;
+    const want = view.shown.has(id);
+    const card = view.cards.get(id);
+    if (!want) {
+      card?.remove();
+      view.cards.delete(id);
+      continue;
+    }
+    if (card) {
+      redrawCard(id);
+      continue;
+    }
+    const sec = document.querySelector(`.sec[data-s="${CSS.escape(q.section)}"]`);
+    if (!sec) return false;
+    const fresh = renderQuestion(q, ctx, { hidden: !view.vis.question(id) });
+    fresh.__hidden = !view.vis.question(id);
+    const siblings = set.sections.find((s) => s.id === q.section)?.questions ?? [];
+    let after = sec.querySelector('.sec-tools');
+    for (const x of siblings) {
+      if (x.id === id) break;
+      const c = view.cards.get(x.id);
+      if (c?.isConnected) after = c;
+    }
+    after.after(fresh);
+    view.cards.set(id, fresh);
+  }
+  for (const sec of document.querySelectorAll('.sec')) if (!sec.querySelector('.q-card')) sec.remove();
+  if (!document.querySelector('.sec')) $('set-body').innerHTML = emptyText();
+  return true;
 }
 
 function paintProgress() {
@@ -657,7 +698,7 @@ function paintCardNav() {
   if (!nav) return;
   const n = view.order.length;
   const todo = view.order.filter((id) => !isDone(view.data.answers.answers[id])).length;
-  nav.innerHTML = `<button class="btn" data-nav="-1" ${view.index <= 0 ? 'disabled' : ''}>${icon('chevron-left', 18)}<span>Back</span></button><span class="card-pos"><b>${n ? view.index + 1 : 0}</b> of ${n}<small>${todo} to answer</small></span><button class="btn primary" data-nav="1" ${view.index >= n - 1 ? 'disabled' : ''}><span>Next</span>${icon('chevron-right', 18)}</button>`;
+  nav.innerHTML = `<button class="btn" data-nav="-1" ${view.index <= 0 ? 'disabled' : ''}>${icon('chevron-left', 18)}<span>Back</span></button><span class="card-pos"><span><b>${n ? view.index + 1 : 0}</b> of ${n}</span><small>${todo} to answer</small></span><button class="btn primary" data-nav="1" ${view.index >= n - 1 ? 'disabled' : ''}><span>Next</span>${icon('chevron-right', 18)}</button>`;
   nav.querySelectorAll('[data-nav]').forEach((b) => (b.onclick = () => (b.dataset.nav === '1' ? nextCard() : prevCard())));
 }
 
