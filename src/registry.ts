@@ -92,6 +92,8 @@ export interface UserConfig {
   /** a fixed token, or false for none (default: one made once and kept in ~/.config/questionme/token) */
   token?: string | false;
   allowHosts?: string[];
+  /** a URL path to serve under, e.g. "team/questions" */
+  base?: string;
   /** the name shown on answers and replies from the page */
   author?: string;
   /** push notifications (questionme notify) */
@@ -145,6 +147,8 @@ export interface HubState {
   token: string;
   version: string;
   started: string;
+  /** the URL path it serves under ("/" unless --base) */
+  base?: string;
 }
 
 const hubFile = () => path.join(configDir(), 'hub.json');
@@ -169,9 +173,9 @@ export function readHubState(): HubState | undefined {
 }
 
 /** Is a questionme listening there? Resolves with its version, or undefined. */
-export function ping(port: number, timeout = 1500): Promise<string | undefined> {
+export function ping(port: number, timeout = 1500, base = '/'): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: '/api/ping', timeout }, (res) => {
+    const req = http.get({ host: '127.0.0.1', port, path: base + 'api/ping', timeout }, (res) => {
       let body = '';
       res.on('data', (c: Buffer) => (body += c.toString()));
       res.on('end', () => {
@@ -192,7 +196,7 @@ export function ping(port: number, timeout = 1500): Promise<string | undefined> 
 export async function runningHub(): Promise<HubState | undefined> {
   const s = readHubState();
   if (!s) return undefined;
-  return (await ping(s.port)) ? s : undefined;
+  return (await ping(s.port, 1500, s.base ?? '/')) ? s : undefined;
 }
 
 const cliPath = () => path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'cli.js');
@@ -234,11 +238,30 @@ export function lanAddresses(): string[] {
 }
 
 /** Links to a page: this computer first, then every address other devices can use. */
-export function links(port: number, host: string, token: string, hash = ''): string[] {
+export function links(port: number, host: string, token: string, hash = '', base = '/'): string[] {
   const q = token ? `?token=${encodeURIComponent(token)}` : '';
   const everywhere = host === '0.0.0.0' || host === '::';
   const local = everywhere || host === '127.0.0.1' || host === '::1' ? 'localhost' : host;
-  const out = [`http://${local}:${port}/${q}${hash}`];
-  if (everywhere) for (const ip of lanAddresses()) out.push(`http://${ip}:${port}/${q}${hash}`);
+  const out = [`http://${local}:${port}${base}${q}${hash}`];
+  if (everywhere) for (const ip of lanAddresses()) out.push(`http://${ip}:${port}${base}${q}${hash}`);
   return out;
+}
+
+/**
+ * A URL path to serve under, as "/a/b/": "test/path", "/test/path", "/test/path/" and "https://host/test/path" all
+ * work. Git Bash turns an argument like /test/path into C:/Program Files/Git/test/path before we see it: that is
+ * refused with how to avoid it, since it would silently serve everything under the wrong path.
+ */
+export function normaliseBase(raw: string, from = 'command line'): string {
+  let b = raw.trim().replace(/\\/g, '/');
+  if (/^https?:[/][/]/i.test(b)) b = new URL(b).pathname;
+  if (/^[a-z]:[/]/i.test(b))
+    throw new Error(
+      `base looks like a Windows path (${raw}, from ${from}). Git Bash rewrites arguments that start with "/": write it without the leading slash (--base test/path) or set MSYS_NO_PATHCONV=1.`,
+    );
+  b = '/' + b.split('/').filter(Boolean).join('/') + '/';
+  if (b === '//') b = '/';
+  if (!/^[A-Za-z0-9._~!$&'()*+,;=:@%/-]+$/.test(b)) throw new Error(`base can only use URL path characters (got ${raw})`);
+  if (b.split('/').some((p) => p === '..' || p === '.')) throw new Error(`base can't contain . or .. (got ${raw})`);
+  return b;
 }

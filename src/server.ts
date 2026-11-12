@@ -23,6 +23,8 @@ export interface Options {
   mode: 'hub' | 'solo';
   port: number;
   host: string;
+  /** a URL path to serve under, as "/a/b/" (default "/") */
+  base?: string;
   token?: string;
   allowHosts?: string[];
   readOnly?: boolean;
@@ -58,6 +60,7 @@ const STATIC: Record<string, string> = {
 
 export async function start(opts: Options): Promise<Running> {
   const token = opts.token ?? '';
+  const base = opts.base ?? '/';
   const maxFile = (opts.maxFileMb ?? 2) * 1048576;
   const pool = new Map<string, { project: Project; root: string; stop?: () => void }>();
   const clients = new Set<http.ServerResponse>();
@@ -188,8 +191,13 @@ export async function start(opts: Options): Promise<Running> {
     const host = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
     if (!allowed(host)) return json(res, 403, { error: `Host "${host}" is not allowed. Start with --allow-host ${host} to allow it.` });
     const url = new URL(req.url ?? '/', 'http://x');
-    const p = url.pathname;
-    if (p === '/api/ping') return json(res, 200, { app: 'questionme', version, mode: opts.mode });
+    // served under a path (behind a proxy): everything lives below it
+    if (base !== '/') {
+      if (url.pathname === base.slice(0, -1)) return void res.writeHead(301, { location: base + url.search }).end();
+      if (!url.pathname.startsWith(base)) return json(res, 404, { error: `not found (questionme is under ${base})` });
+    }
+    const p = '/' + url.pathname.slice(base.length);
+    if (p === '/api/ping') return json(res, 200, { app: 'questionme', version, mode: opts.mode, base });
     if (token) {
       const given = url.searchParams.get('token') ?? bearer(req) ?? cookie(req, 'questionme_token') ?? '';
       if (!same(given, token)) {
@@ -198,8 +206,8 @@ export async function start(opts: Options): Promise<Running> {
       }
       if (url.searchParams.has('token')) {
         url.searchParams.delete('token');
-        res.setHeader('set-cookie', `questionme_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000`);
-        if (p === '/' || p === '/index.html') return void res.writeHead(302, { location: '/' + (url.search || '') }).end();
+        res.setHeader('set-cookie', `questionme_token=${encodeURIComponent(token)}; Path=${base}; HttpOnly; SameSite=Lax; Max-Age=31536000`);
+        if (p === '/' || p === '/index.html') return void res.writeHead(302, { location: base + (url.search || '') }).end();
       }
     }
     const method = req.method ?? 'GET';

@@ -391,3 +391,47 @@ test('notifications: an agent adding questions and replying makes one batched we
     hook.close();
   }
 });
+
+test('a nested base path: the page, assets, chunks, files, answers and live events live under it; links carry it', async () => {
+  const { normaliseBase, links } = await import('../dist/registry.js');
+  for (const b of ['test/path', '/test/path', '/test/path/', 'test//path/', 'https://example.com/test/path']) assert.equal(normaliseBase(b), '/test/path/');
+  assert.equal(normaliseBase('/'), '/');
+  assert.throws(() => normaliseBase('C:/Program Files/Git/test/path'), /Git Bash/);
+  assert.throws(() => normaliseBase('a/../b'), /\.\./);
+  assert.match(links(4195, '127.0.0.1', 't', '#/p/x', '/test/path/')[0], /^http:\/\/localhost:4195\/test\/path\/\?token=t#\/p\/x$/);
+
+  const running = await start({ mode: 'solo', projects: () => [{ key: 'demo', root: demo }], port: 0, host: '127.0.0.1', base: '/test/path/', token: 'tok' });
+  const at = `http://127.0.0.1:${running.port}`;
+  const auth = { authorization: 'Bearer tok' };
+  try {
+    assert.equal((await request(running.port, '/api/info', { headers: auth })).status, 404, 'nothing outside the base');
+    const bare = await request(running.port, '/test/path');
+    assert.equal(bare.status, 301);
+    assert.equal(bare.headers.location, '/test/path/');
+    assert.equal((await request(running.port, '/test/path/api/ping')).json().base, '/test/path/');
+    const login = await request(running.port, '/test/path/?token=tok');
+    assert.equal(login.headers.location, '/test/path/');
+    assert.match(String(login.headers['set-cookie']), /Path=\/test\/path\//);
+    const html = (await request(running.port, '/test/path/', { headers: auth })).body;
+    for (const m of html.matchAll(/(?:src|href)="([^"#]+)"/g)) if (!/^(data:|https?:)/.test(m[1])) assert.ok(!m[1].startsWith('/'), `${m[1]} is relative`);
+    const main = (await request(running.port, '/test/path/assets/main.js', { headers: auth })).body;
+    const chunk = /["'](\.\/chunks\/[^"']+\.js)["']/.exec(main)?.[1];
+    assert.ok(chunk, 'main.js loads its chunks by relative path');
+    assert.equal((await request(running.port, '/test/path/assets/' + chunk.slice(2), { headers: auth })).status, 200);
+    assert.equal((await request(running.port, '/test/path/api/p/demo/s/weather-plan', { headers: auth })).status, 200);
+    assert.equal((await request(running.port, '/test/path/raw/demo/art/sun.svg', { headers: auth })).status, 200);
+    assert.equal((await request(running.port, '/test/path/api/p/demo/text?path=src/forecast.ts&lines=1-2', { headers: auth })).status, 200);
+    const saved = await request(running.port, '/test/path/api/p/demo/s/weather-plan/answer', { method: 'POST', headers: auth, body: { id: 'care', number: 5 } });
+    assert.equal(saved.json().answer.number, 5);
+    const ev = await fetch(at + '/test/path/api/events', { headers: auth });
+    assert.equal(ev.headers.get('content-type'), 'text/event-stream');
+    await ev.body.cancel();
+  } finally {
+    await running.close();
+  }
+});
+
+test('the CLI refuses an option it does not know, and points at --help', () => {
+  assert.throws(() => run('list', '--jsn'), (e) => /unknown option --jsn \(questionme --help/.test(e.stderr));
+  assert.match(execFileSync(process.execPath, [cli, '--help'], { encoding: 'utf8' }), /--base <path>/);
+});

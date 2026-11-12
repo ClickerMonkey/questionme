@@ -14,7 +14,8 @@ Use it instead of asking in chat when you have more than about 4 questions, ques
 1. add_questions to a set (one set per topic or plan). Give each question a stable id, a short question, options with descriptions, mark one recommended, and say why it matters. Mark the ones you can't go on without as blocking. Use content blocks (files, code, diffs, mermaid, images, html mockups) instead of long prose. Use hidden + an option's "shows" (or showIf) for follow-up questions that only matter after a certain answer.
 2. get_link and give the user the links (their phone uses the LAN or Tailscale address).
 3. Keep working on what doesn't depend on the answers. To wait, prefer running \`npx questionme wait <set> --blocking\` (or --all / --any) in the background: it exits, and wakes you, when the condition holds. wait_for_answers blocks for at most a few minutes.
-4. get_answers with filter "new" returns only what changed since you last read, compactly; page with limit/offset for big sets. Apply them, then ack_answers with a short note the user sees. Put the user's notes into docs word for word. Answer their messages with reply.`;
+4. get_answers with filter "new" returns only what changed since you last read, compactly; page with limit/offset for big sets. Apply them, then ack_answers with a short note the user sees. Put the user's notes into docs word for word. Answer their messages with reply.
+5. The questionme CLI does all of this too, plus serving and setup: run \`npx questionme --help\` for every command and option (e.g. --base to serve under a URL path, --solo, notify) instead of guessing.`;
 
 type Json = Record<string, unknown>;
 
@@ -45,7 +46,7 @@ async function linkFor(project: Project, set?: string, start = true): Promise<st
   if (!hub) return 'The questionme server is not running (get_link starts it).';
   const key = keyed(projects()).find((p) => path.resolve(p.root).toLowerCase() === project.root.toLowerCase())?.key ?? '';
   const hash = key ? `#/p/${encodeURIComponent(key)}${set ? `/s/${encodeURIComponent(set)}` : ''}` : '';
-  const all = links(hub.port, hub.host, hub.token, hash);
+  const all = links(hub.port, hub.host, hub.token, hash, hub.base);
   return ['Links (the first is this computer; the others work from a phone on the same network or Tailscale):', ...all.map((l) => '  ' + l)].join('\n');
 }
 

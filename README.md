@@ -199,6 +199,7 @@ npx questionme --solo [folder] # just this folder, on its own server
 |---|---|---|---|
 | `-p, --port <n>` | `QUESTIONME_PORT` | `4195` | The port to try first; the next free one is used. |
 | `-H, --host <addr>` | `QUESTIONME_HOST` | `0.0.0.0` | Where to listen. The default lets your phone reach it. |
+| `--base <path>` | `QUESTIONME_BASE` | `/` | Serve under a URL path, such as `questions` or `team/questions`, behind a proxy. See [Under a path](#under-a-path). |
 | `--local` | | | Only this computer (`127.0.0.1`), no token. |
 | `--token <t>` | `QUESTIONME_TOKEN` | made once | The token. Open a link with `?token=…` once on each device and it's kept as a cookie. |
 | `--no-token` | | | No token: anyone on your network can open it. |
@@ -206,13 +207,29 @@ npx questionme --solo [folder] # just this folder, on its own server
 | `-o, --open` | | | Open it in your browser. |
 | `--read-only` | | | Look, don't answer. |
 
-Your settings can also go in `~/.config/questionme/config.json` (`port`, `host`, `token` (or `false`), `allowHosts`,
-`notify`).
+`questionme --help` prints every command and option, and a mistyped option is refused rather than ignored. Agents are
+told (in the MCP server's instructions and the `CLAUDE.md` section `init` writes) to check `--help` instead of guessing.
+
+Your settings can also go in `~/.config/questionme/config.json` (`port`, `host`, `base`, `token` (or `false`),
+`allowHosts`, `notify`).
 `QUESTIONME_HOME` moves that folder. It also holds `projects.json` (the hub's list), `hub.json` (where it's running),
 `token`, and `hub.log`.
 
 The links include every address your phone might use: your Wi-Fi or LAN address, and a Tailscale address if you have
 one. Virtual adapters (WSL, Docker, VMs) are left out.
+
+### Under a path
+
+`--base team/questions` (or `QUESTIONME_BASE`, or `"base"` in the config) serves everything under `/team/questions/`:
+the page, its scripts, project files, answers, live updates and the API. Any depth works, and `team/questions`,
+`/team/questions`, `/team/questions/` and a full `https://host/team/questions` mean the same. The token cookie is kept
+to that path, `/team/questions` redirects to `/team/questions/`, and nothing is served outside it. The hub remembers its
+base, so the links it prints, the MCP server's `get_link` and notifications all include it. Point your proxy at
+questionme without stripping the path. To change the base of a running hub, `questionme stop` and start it again.
+
+In Git Bash on Windows, leave off the leading slash: Git Bash rewrites `/team/questions` into
+`C:/Program Files/Git/team/questions` before questionme sees it (questionme refuses that, and says why).
+`MSYS_NO_PATHCONV=1` turns the rewriting off.
 
 ## Notifications on your phone
 

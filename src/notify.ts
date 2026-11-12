@@ -60,6 +60,7 @@ export class Notifier {
     private readonly project: (key: string) => Project | undefined,
     private readonly port: () => number,
     private readonly token: string,
+    private readonly base: string,
     private readonly log: (line: string) => void = () => undefined,
   ) {}
 
@@ -152,17 +153,17 @@ export class Notifier {
   }
 
   link(key: string, set: string): string {
-    return linkBase(notifyConfig(), this.port(), this.token) + `#/p/${encodeURIComponent(key)}/s/${encodeURIComponent(set)}`;
+    return linkBase(notifyConfig(), this.port(), this.token, this.base) + `#/p/${encodeURIComponent(key)}/s/${encodeURIComponent(set)}`;
   }
 }
 
 /** Where links in notifications point: the configured base, else Tailscale (works anywhere), else the LAN. */
-export function linkBase(cfg: NotifyConfig, port: number, token: string): string {
+export function linkBase(cfg: NotifyConfig, port: number, token: string, hubBase = '/'): string {
   let base = cfg.link?.replace(/\/+$/, '');
   if (!base) {
     const ips = lanAddresses();
     const ts = ips.find((ip) => /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip));
-    base = `http://${ts ?? ips[0] ?? os.hostname()}:${port}`;
+    base = `http://${ts ?? ips[0] ?? os.hostname()}:${port}${hubBase.replace(/\/$/, '')}`;
   }
   return `${base}/${cfg.includeToken && token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }

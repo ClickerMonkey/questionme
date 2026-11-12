@@ -21,6 +21,7 @@ import {
   projectsPath,
   register,
   runningHub,
+  normaliseBase,
   userConfig,
   userConfigPath,
   updateUserConfig,
@@ -36,6 +37,8 @@ const HELP = `questionme ${version}: questions from an agent, answered on your p
 Serve the page:
   questionme [options]                 one server for every project (the hub); adds this folder
   questionme --solo [folder]           just this folder, on its own server
+          --base <path>    serve under a URL path, e.g. questions or team/questions (behind a proxy;
+                           in Git Bash leave off the leading /, or it becomes a Windows path)
       -p, --port <n>       port to try first (default 4195)
       -H, --host <addr>    address to listen on (default 0.0.0.0: your phone can reach it, with a token)
           --local          only this computer (127.0.0.1, no token)
@@ -85,7 +88,8 @@ interface Args {
   flags: Map<string, string | true>;
 }
 
-const VALUED = new Set(['-p', '--port', '-H', '--host', '--token', '--allow-host', '-C', '--folder', '--timeout', '--settle', '--count', '--ids', '--section', '--limit', '--offset', '--note', '--forget', '--questions']);
+const VALUED = new Set(['--base', '-p', '--port', '-H', '--host', '--token', '--allow-host', '-C', '--folder', '--timeout', '--settle', '--count', '--ids', '--section', '--limit', '--offset', '--note', '--forget', '--questions']);
+const BOOLEAN = new Set(['-h', '--help', '-v', '--version', '--solo', '--background', '--local', '--no-token', '-o', '--open', '--read-only', '--json', '--full', '--peek', '--all', '--new', '--unacked', '--changed', '--blocking', '--any', '--quiet', '--hook', '--no-mcp', '--no-claude-md']);
 const COMMANDS = new Set(['notify', 'serve', 'init', 'list', 'show', 'answers', 'wait', 'ack', 'reply', 'validate', 'schema', 'url', 'stop', 'projects', 'hook', 'mcp', 'help']);
 
 function parse(argv: string[]): Args {
@@ -106,7 +110,8 @@ function parse(argv: string[]): Args {
         if (v === undefined) fail(`${name} needs a value`);
         const prev = flags.get(name);
         flags.set(name, typeof prev === 'string' && (name === '--allow-host' || name === '--ids') ? `${prev},${v}` : v);
-      } else flags.set(name, true);
+      } else if (BOOLEAN.has(name)) flags.set(name, true);
+      else fail(`unknown option ${name} (questionme --help lists every command and option)`);
       continue;
     }
     if (!cmd && !pos.length && COMMANDS.has(a)) cmd = a;
@@ -200,7 +205,7 @@ async function run(): Promise<void> {
       const key = keyed(projects()).find((k) => same(k.root, p.root))?.key;
       const set = args.pos[0];
       const hash = key && p.exists ? `#/p/${encodeURIComponent(key)}${set ? `/s/${encodeURIComponent(set)}` : ''}` : '';
-      for (const l of links(hub.port, hub.host, hub.token, hash)) console.log(l);
+      for (const l of links(hub.port, hub.host, hub.token, hash, hub.base)) console.log(l);
       return;
     }
     case 'stop': {
@@ -243,6 +248,7 @@ async function serve(): Promise<void> {
   const host = value('-H', '--host') ?? process.env['QUESTIONME_HOST'] ?? (local ? '127.0.0.1' : (cfg.host ?? '0.0.0.0'));
   const token = flag('--no-token') || (local && !value('--token')) ? '' : (value('--token') ?? process.env['QUESTIONME_TOKEN'] ?? (cfg.token === false ? '' : (cfg.token ?? hubToken())));
   const allowHosts = [...(cfg.allowHosts ?? []), ...list(value('--allow-host'))];
+  const base = normaliseBase(value('--base') ?? process.env['QUESTIONME_BASE'] ?? cfg.base ?? '/', value('--base') ? 'command line' : process.env['QUESTIONME_BASE'] ? 'QUESTIONME_BASE' : 'config.json');
   const root = path.resolve(args.pos[0] ?? value('-C', '--folder') ?? process.cwd());
 
   if (!solo) {
@@ -252,7 +258,8 @@ async function serve(): Promise<void> {
       if (background) return;
       const key = keyed(projects()).find((k) => same(k.root, root))?.key;
       console.log(`questionme is already running (pid ${running.pid}):`);
-      for (const l of links(running.port, running.host, running.token, key ? `#/p/${encodeURIComponent(key)}` : '')) console.log('  ' + l);
+      for (const l of links(running.port, running.host, running.token, key ? `#/p/${encodeURIComponent(key)}` : '', running.base)) console.log('  ' + l);
+      if ((running.base ?? '/') !== base) console.log(`  (it serves under ${running.base ?? '/'}, not ${base}: questionme stop, then start it again to change that)`);
       console.log('  (questionme stop to stop it)');
       return;
     }
@@ -266,7 +273,7 @@ async function serve(): Promise<void> {
     const p = served().find((x) => x.key === key);
     return p ? new Project(p.root) : undefined;
   };
-  const notifier = new Notifier(projectOf, () => listening, token, (line) => console.log(`[${time()}] ${line}`));
+  const notifier = new Notifier(projectOf, () => listening, token, base, (line) => console.log(`[${time()}] ${line}`));
   for (const p of served()) for (const id of new Project(p.root).ids()) notifier.baseline(p.key, id);
   const running = await start({
     mode: solo ? 'solo' : 'hub',
@@ -274,6 +281,7 @@ async function serve(): Promise<void> {
     ...(solo ? {} : { watchList: projectsPath() }),
     port,
     host,
+    base,
     token,
     allowHosts,
     readOnly: flag('--read-only'),
@@ -288,12 +296,12 @@ async function serve(): Promise<void> {
     onProject: (key, sets) => sets.forEach((set) => notifier.observe(key, set)),
   });
   listening = running.port;
-  if (!solo) writeHubState({ pid: process.pid, port: running.port, host, token, version, started: new Date().toISOString() });
+  if (!solo) writeHubState({ pid: process.pid, port: running.port, host, token, base, version, started: new Date().toISOString() });
 
   const key = solo ? keyFor(root) : keyed(projects()).find((k) => same(k.root, root))?.key;
   const hash = key && new Project(root).exists ? `#/p/${encodeURIComponent(key)}` : '';
   console.log(`questionme ${version} — ${solo ? root : `${projects().length} project${projects().length === 1 ? '' : 's'} (${tildeOf(projectsPath())})`}`);
-  for (const l of links(running.port, host, token, hash)) console.log('  ' + l);
+  for (const l of links(running.port, host, token, hash, base)) console.log('  ' + l);
   if (host === '127.0.0.1') console.log('  (only this computer: drop --local to answer from your phone)');
   if (!token && host !== '127.0.0.1') console.log('  (no token: anyone on your network can open it)');
   if (!background) {
@@ -306,7 +314,8 @@ async function serve(): Promise<void> {
       ? `  notifications: ${[n.ntfy ? 'ntfy' : '', n.webhook ? 'webhook' : ''].filter(Boolean).join(' + ')} (questionme notify test)`
       : '  notifications: off (questionme notify ntfy puts them on your phone)',
   );
-  if (flag('-o', '--open')) openBrowser(links(running.port, host, token, hash)[0] ?? '');
+  console.log('  every command and option: npx questionme --help');
+  if (flag('-o', '--open')) openBrowser(links(running.port, host, token, hash, base)[0] ?? '');
 
   const stop = () => {
     if (!solo) clearHubState(process.pid);
@@ -411,7 +420,7 @@ async function notify(): Promise<void> {
     console.log(`Notifications (${tildeOf(userConfigPath())}):`);
     console.log(`  ntfy:    ${n.ntfy ?? '(off)'}`);
     console.log(`  webhook: ${n.webhook ?? '(off)'}`);
-    console.log(`  links:   ${linkBase(n, readHub()?.port ?? 4195, '')}  (questionme notify link <url> to change)`);
+    console.log(`  links:   ${linkBase(n, readHub()?.port ?? 4195, '', readHub()?.base)}  (questionme notify link <url> to change)`);
     console.log(`  batched: sent once agents have been quiet for ${n.quietSeconds ?? 20} s`);
     if (!notifyEnabled(n)) console.log('\nTurn them on: questionme notify ntfy   (then subscribe in the ntfy app)');
   };
@@ -421,7 +430,7 @@ async function notify(): Promise<void> {
     await send(n, {
       title: 'questionme: notifications work',
       message: "You'll get one when an agent has new questions for you.",
-      url: linkBase(n, readHub()?.port ?? 4195, ''),
+      url: linkBase(n, readHub()?.port ?? 4195, '', readHub()?.base),
       project: '',
       set: '',
       newQuestions: 0,
@@ -468,7 +477,7 @@ async function notify(): Promise<void> {
 
 function readHub() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(configDir(), 'hub.json'), 'utf8')) as { port: number };
+    return JSON.parse(fs.readFileSync(path.join(configDir(), 'hub.json'), 'utf8')) as { port: number; base?: string };
   } catch {
     return undefined;
   }
@@ -503,6 +512,8 @@ them in a question set with the questionme MCP tools (\`add_questions\`; without
   background: it exits, with the new answers, once they're answered.
 - Read only what's new: \`get_answers\` (filter "new") or \`npx questionme answers <set> --new\`. After applying
   answers, \`ack_answers\` with a short note. Put the owner's notes into docs word for word.
+- \`npx questionme --help\` lists every command and option (serving under a URL path with --base, one folder with
+  --solo, notifications, waiting, validating). Check it rather than guessing at flags.
 ${MARK_END}`;
 
 /** How Claude Code should start questionme: through npx once it's published, else this copy. */
