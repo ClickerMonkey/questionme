@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f8f8fb" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16171c" media="(prefers-color-scheme: dark)" />
+    <meta name="referrer" content="no-referrer" />
+    <title>questionme</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b5fd6'/><path d='M11.5 12a4.5 4.5 0 1 1 6.3 4.1c-1.1.5-1.8 1.4-1.8 2.6V20' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/><circle cx='16' cy='24.5' r='1.9' fill='white'/></svg>" />
+    <link rel="stylesheet" href="assets/app.css" />
+    <script>
+      // the saved theme before anything draws, so a dark page never flashes white
+      try {
+        const t = localStorage.getItem('questionme:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="#/" title="Every set">
+        <span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"><path d="M8.6 9a3.4 3.4 0 1 1 4.7 3.1c-.8.4-1.3 1-1.3 1.9v.8" /><circle cx="12" cy="18.6" r="0.6" fill="currentColor" /></svg></span><b>questionme</b>
+      </a>
+      <nav class="crumbs" id="crumbs"></nav>
+      <span class="live" id="live" title="Live: updates as answers and questions change"></span>
+      <button class="icon-btn" id="theme-btn" aria-label="Theme"></button>
+    </header>
+    <main class="main" id="main"><div class="skeleton" style="height: 120px; margin: 24px"></div></main>
+    <script type="module" src="assets/main.js"></script>
+  </body>
+</html>

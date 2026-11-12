@@ -1,0 +1,201 @@
+/* ── quick open, popovers, toast ── */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10vh var(--space-3) 0;
+  animation: fade var(--medium) var(--ease);
+}
+.modal {
+  width: min(680px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: grid;
+  animation: pop var(--medium) var(--ease);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+.qo-in {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-faint);
+}
+.qo-in input {
+  flex: 1;
+  border: 0;
+  background: none;
+  padding: 14px 0;
+  font-size: 16px;
+  outline: none;
+  color: var(--text);
+}
+.qo-list {
+  max-height: 56vh;
+  overflow: auto;
+  padding: 6px;
+}
+.qo-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+}
+.qo-item .nm {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qo-item b {
+  color: var(--accent);
+}
+.qo-item.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.qo-foot {
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+@media (pointer: coarse) {
+  .qo-foot {
+    display: none;
+  }
+  .qo-item {
+    min-height: 44px;
+  }
+}
+.pop {
+  position: fixed;
+  top: calc(var(--bar-h) + 6px);
+  right: var(--space-3);
+  z-index: 40;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - var(--bar-h) - 20px);
+  overflow: auto;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: var(--space-3);
+  animation: pop var(--medium) var(--ease);
+}
+.pop h3 {
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.pop label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--text-sm);
+}
+.pop label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pop label.check input {
+  accent-color: var(--accent);
+}
+.pop select,
+.pop input:not([type='checkbox']) {
+  height: var(--control-sm);
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.pop p {
+  margin: 0;
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.keys dd {
+  margin: 0;
+  color: var(--text-dim);
+}
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + var(--safe-bottom));
+  transform: translate(-50%, 20px);
+  padding: 8px 16px;
+  border-radius: var(--radius-full);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--medium) var(--ease), transform var(--medium) var(--ease);
+  z-index: 60;
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.skeleton {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (max-width: 759px) {
+  .md.card {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+/* code shows the characters typed: no programming ligatures (=> stays =>), whatever font the system picks */
+.code,
+.code *,
+pre,
+code,
+.qo-item {
+  font-variant-ligatures: none !important;
+  font-feature-settings: 'calt' 0, 'liga' 0 !important;
+}
+
