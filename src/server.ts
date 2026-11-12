@@ -32,6 +32,8 @@ export interface Options {
   showSecrets?: boolean;
   /** answers or messages changed in a set (from anywhere) */
   onAnswers?: (project: string, set: string, summary: Summary) => void;
+  /** a project joined after the start (its sets, as they are) */
+  onProject?: (project: string, sets: string[]) => void;
   /** a set was added or its questions changed */
   onSet?: (project: string, set: string, summary: Summary | undefined) => void;
 }
@@ -103,8 +105,10 @@ export async function start(opts: Options): Promise<Running> {
     );
   };
 
+  let started = false;
   const watchProject = (key: string, entry: { project: Project; stop?: () => void }) => {
     if (entry.stop || !fs.existsSync(entry.project.dir)) return;
+    if (started) opts.onProject?.(key, entry.project.ids());
     try {
       const w = fs.watch(entry.project.dir, { recursive: true }, (_e, name) => {
         const rel = String(name ?? '').split(path.sep).join('/');
@@ -150,6 +154,7 @@ export async function start(opts: Options): Promise<Running> {
     if (changed) broadcast('projects', {});
   };
   refresh();
+  started = true;
   // a project's .questionme folder may appear later, and the list may change: look again now and then
   const tick = setInterval(refresh, 2000);
   tick.unref();

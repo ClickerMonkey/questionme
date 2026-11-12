@@ -34,7 +34,7 @@ function topHtml(q, a, hidden) {
     isStale(q, a) ? '<span class="badge warn">Changed</span>' : '',
     hidden ? `<span class="badge">${icon('eye', 13)}Hidden</span>` : '',
   ].join('');
-  return `${q.header ? `<span class="q-header">${esc(q.header)}</span>` : ''}${badges}<a class="q-id" href="#" data-link="${esc(q.id)}" title="Copy a link to this question">${esc(q.id)}</a>`;
+  return `<span class="q-num" title="Question ${q.index + 1}">${q.index + 1}</span>${q.header ? `<span class="q-header">${esc(q.header)}</span>` : ''}${badges}<a class="q-id" href="#" data-link="${esc(q.id)}" title="Copy a link to this question">${icon('link', 12)}${esc(q.id)}</a>`;
 }
 
 /** Just the badges and the card's state (while typing, so the input keeps its focus). */
@@ -54,7 +54,13 @@ export function draw(card, q, ctx, opts = {}) {
   card.innerHTML = `<div class="q-top">${topHtml(q, a, hidden)}</div>`;
   card.append(md(q.question, '', 'q-text'));
   if (hidden && ctx.why) card.insertAdjacentHTML('beforeend', `<p class="q-why-hidden">${icon('info', 14)}<span>${esc(ctx.why(q.id))}</span></p>`);
-  if (q.why) card.append(md(q.why, '', 'q-why'));
+  if (q.why) {
+    const why = document.createElement('div');
+    why.className = 'q-why';
+    why.innerHTML = `<span class="q-why-icon" aria-hidden="true">${icon('info', 15)}</span>`;
+    why.append(md(q.why, ''));
+    card.append(why);
+  }
   if (q.content.length) {
     const c = document.createElement('div');
     c.className = 'q-content';
@@ -97,16 +103,14 @@ export function draw(card, q, ctx, opts = {}) {
   const unseen = ctx.unseen?.(q.id) || 0;
   const acts = document.createElement('footer');
   acts.className = 'q-acts';
-  const btn = (act, ic, text, on = false, title = '') => `<button class="chip${on ? ' on' : ''}" data-act="${act}" ${title ? `title="${esc(title)}"` : ''} ${disabled && act !== 'thread' ? 'disabled' : ''}>${icon(ic, 14)}<span>${text}</span></button>`;
+  const off = disabled ? 'disabled' : '';
+  const seg = (act, ic, text, title) => `<button class="seg-btn${a?.status === act ? ' on' : ''}" data-act="${act}" title="${esc(title)}" aria-pressed="${a?.status === act}" ${off}>${icon(ic, 14)}<span>${text}</span></button>`;
+  const tool = (act, ic, text, title, extra = '') => `<button class="act-btn" data-act="${act}" title="${esc(title)}" ${act === 'thread' ? '' : off}>${icon(ic, 16)}<span>${text}</span>${extra}</button>`;
   const rec = recommendationText(q);
   acts.innerHTML = [
-    q.allowNote && !hasNote ? btn('note', 'pen', 'Note') : '',
-    btn('delegated', 'sparkles', 'You decide', a?.status === 'delegated', rec ? `Go with the recommendation: ${rec}` : 'Let the agent choose'),
-    btn('later', 'clock', 'Later', a?.status === 'later', 'Come back to it'),
-    btn('skipped', 'x', 'Skip', a?.status === 'skipped', "Doesn't matter / don't know"),
-    `<button class="chip" data-act="thread">${icon('chat', 14)}<span>Discuss${thread.length ? ` (${thread.length})` : ''}</span>${unseen ? `<span class="dot" title="New reply"></span>` : ''}</button>`,
-    a && !disabled ? btn('clear', 'undo', 'Clear') : '',
+    `<div class="quick" role="group" aria-label="Instead of answering">${seg('delegated', 'sparkles', 'You decide', rec ? `Go with the recommendation: ${rec}` : 'Let the agent choose')}${seg('later', 'clock', 'Later', 'Come back to it')}${seg('skipped', 'x', 'Skip', "Doesn't matter, or you don't know")}</div>`,
     '<span class="saved" aria-live="polite"></span>',
+    `<span class="acts-more">${q.allowNote && !hasNote ? tool('note', 'pen', 'Note', 'Add a note for the agent') : ''}${tool('thread', 'chat', 'Discuss', 'Ask why, or explain', `${thread.length ? `<span class="n">${thread.length}</span>` : ''}${unseen ? '<span class="dot" title="New reply"></span>' : ''}`)}${a && !disabled ? tool('clear', 'undo', 'Clear', 'Clear the answer') : ''}</span>`,
   ].join('');
   card.append(acts);
 
@@ -156,7 +160,7 @@ function saveWith(q, ctx, card, patch, typing = false) {
   // a note on its own (no answer yet) is fine for choices and text; elsewhere it waits for an answer
   if (!cur && 'note' in patch && !patch.note.trim()) return Promise.resolve();
   if (!cur && 'note' in patch && (q.type === 'number' || q.type === 'scale' || q.type === 'rank' || q.type === 'yesno')) {
-    flag(card, 'The note saves with your answer');
+    flag(card, 'Answer first; the note saves with it');
     return Promise.resolve();
   }
   const next = { ...base, ...patch };
@@ -170,7 +174,8 @@ function saveWith(q, ctx, card, patch, typing = false) {
 export function flag(card, text, bad = false) {
   const s = card.querySelector('.saved');
   if (!s) return;
-  s.textContent = text;
+  if (text === 'Saved') s.innerHTML = icon('check', 13) + 'Saved';
+  else s.textContent = text;
   s.classList.toggle('bad', bad);
   clearTimeout(s.__t);
   if (!bad && text === 'Saved') s.__t = setTimeout(() => (s.textContent = ''), 1600);
@@ -210,7 +215,7 @@ function inputFor(q, a, el, ctx, disabled) {
         b.setAttribute('role', multi ? 'checkbox' : 'radio');
         b.setAttribute('aria-checked', String(on));
         const reveals = o.shows.length ? `<span class="opt-shows">${icon('plus', 12)}Opens ${o.shows.length === 1 ? 'a follow-up' : o.shows.length + ' follow-ups'}</span>` : '';
-        b.innerHTML = `<span class="tick">${on || chosen ? icon('check', 14) : ''}</span><span class="opt-main"><span class="opt-label">${esc(o.label)}${o.recommended ? `<span class="rec-tag">${chosen ? 'Chosen for you' : 'Recommended'}</span>` : ''}</span>${reveals}</span>`;
+        b.innerHTML = `<span class="tick">${on || chosen ? icon('check', 14) : ''}</span><span class="opt-main"><span class="opt-label">${esc(o.label)}${o.recommended ? `<span class="rec-tag">${icon('star', 11)}${chosen ? 'Chosen for you' : 'Recommended'}</span>` : ''}</span>${reveals}</span>`;
         if (o.description) b.querySelector('.opt-main').append(md(o.description, '', 'opt-desc'));
         wrap.append(b);
         if (o.content.length) {

@@ -79,35 +79,57 @@ async function showHome(onlyKey) {
   const projects = info.projects.filter((p) => !onlyKey || p.key === onlyKey);
   if (solo && projects[0]) state.project = projects[0].key;
   bar(onlyKey && !solo ? [{ text: 'All projects', href: '#/' }, { text: projects[0]?.name || onlyKey }] : []);
-  document.title = 'questionme';
   const withSets = projects.filter((p) => p.sets.length);
   const empty = projects.filter((p) => !p.sets.length);
+  const open = withSets.flatMap((p) => p.sets).filter((s) => s.status === 'open');
+  const waiting = open.reduce((n, s) => n + s.toAnswer, 0);
+  const blocking = open.reduce((n, s) => n + s.blocking, 0);
+  document.title = waiting ? `(${waiting}) questionme` : 'questionme';
   let html = '';
   if (!withSets.length) {
-    html += `<div class="empty"><h2>No questions yet</h2><p>When an agent has questions for you, they show up here. In a project folder, run <code>npx questionme init</code> once; then agents add questions with the questionme MCP tools (or write <code>.questionme/sets/&lt;set&gt;.json</code>).</p></div>`;
+    html += `<div class="empty"><div class="empty-art">${icon('chat', 34)}</div><h2>No questions yet</h2><p>When an agent has questions for you, they show up here. In a project folder, run <code>npx questionme init</code> once; agents then add questions with the questionme MCP tools.</p></div>`;
+  } else {
+    html += `<header class="home-hero"><h1>${waiting ? `${waiting} question${waiting === 1 ? '' : 's'} waiting` : 'All caught up'}</h1><p>${blocking ? `<span class="badge danger">${icon('warning', 13)}${blocking} blocking</span> ` : ''}${open.length} open set${open.length === 1 ? '' : 's'}${withSets.length > 1 ? ` in ${withSets.length} projects` : ''}</p></header>`;
   }
   for (const p of withSets) {
     const sets = [...p.sets].sort((a, b) => (a.status === b.status ? (b.updated || '').localeCompare(a.updated || '') : a.status === 'open' ? -1 : 1));
-    html += `<section class="proj"><h2 class="proj-name"><a href="#/p/${encodeURIComponent(p.key)}">${esc(p.name)}</a><span class="muted small">${esc(p.root)}</span></h2><div class="sets">${sets.map((s) => setRow(p.key, s)).join('')}</div></section>`;
+    html += `<section class="proj"><h2 class="proj-name"><span class="proj-mark" style="--hue:${hueOfText(p.name)}">${esc(p.name.slice(0, 1).toUpperCase())}</span><a href="#/p/${encodeURIComponent(p.key)}">${esc(p.name)}</a><span class="proj-root" title="${esc(p.root)}">${esc(p.root)}</span></h2><div class="sets">${sets.map((s) => setRow(p.key, s)).join('')}</div></section>`;
   }
-  if (empty.length && !onlyKey) html += `<p class="muted small proj-empty">Also watching, no sets yet: ${empty.map((p) => esc(p.name)).join(', ')}</p>`;
+  if (empty.length && !onlyKey) html += `<p class="proj-empty">Also watching, no sets yet: ${empty.map((p) => esc(p.name)).join(', ')}</p>`;
   main.innerHTML = `<div class="home">${html}</div>`;
 }
 
+/** a progress ring: done of total */
+function ring(done, total, size = 52) {
+  const pct = total ? done / total : 0;
+  const r = size / 2 - 4;
+  const c = 2 * Math.PI * r;
+  return `<span class="ring${pct >= 1 ? ' full' : ''}" style="--size:${size}px" title="${done} of ${total}"><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true"><circle class="ring-bg" cx="${size / 2}" cy="${size / 2}" r="${r}"/><circle class="ring-fg" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - pct)}"/></svg><span class="ring-text">${pct >= 1 ? icon('check', Math.round(size / 3)) : Math.round(pct * 100) + '<small>%</small>'}</span></span>`;
+}
+
+const hueOfText = (t) => {
+  let h = 0;
+  for (const ch of String(t)) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+};
+
 function setRow(key, s) {
-  const pct = s.visible ? Math.round((s.done / s.visible) * 100) : 0;
   const chips = [
-    s.toAnswer ? `<span class="badge">${s.toAnswer} to answer</span>` : `<span class="badge ok">${icon('check', 13)}All answered</span>`,
-    s.blocking ? `<span class="badge danger">${s.blocking} blocking</span>` : '',
+    s.toAnswer ? `<span class="badge accent">${s.toAnswer} to answer</span>` : `<span class="badge ok">${icon('check', 13)}All answered</span>`,
+    s.blocking ? `<span class="badge danger">${icon('warning', 12)}${s.blocking} blocking</span>` : '',
     s.changed ? `<span class="badge warn">${s.changed} changed</span>` : '',
     s.later ? `<span class="badge">${s.later} later</span>` : '',
     s.errors ? `<span class="badge danger">${s.errors} errors in the file</span>` : '',
     s.status === 'closed' ? '<span class="badge">Closed</span>' : '',
   ].join('');
-  return `<a class="set-row${s.status === 'closed' ? ' closed' : ''}" href="${setHref(key, s.id)}"><div class="set-title"><b>${esc(s.title)}</b><span class="muted small">${esc(s.id)}${s.updated ? ' · ' + esc(ago(Date.parse(s.updated))) : ''}</span></div><div class="progress" title="${s.done} of ${s.visible}"><span style="width:${pct}%"></span></div><div class="set-meta"><span class="count">${s.done}<span class="muted">/${s.visible}</span></span>${chips}</div></a>`;
+  return `<a class="set-row${s.status === 'closed' ? ' closed' : ''}${s.blocking ? ' urgent' : ''}" href="${setHref(key, s.id)}">${ring(s.done, s.visible)}<div class="set-info"><b class="set-name">${esc(s.title)}</b><span class="set-sub">${s.done} of ${s.visible} answered${s.updated ? ' · ' + esc(ago(Date.parse(s.updated))) : ''}</span><span class="set-chips">${chips}</span></div><span class="set-go">${icon('chevron-right', 20)}</span></a>`;
 }
 
 // ── one set ──
+/** each section's colour (a hue), so you can tell where you are */
+const HUES = [268, 205, 160, 30, 330, 85, 295, 185, 0, 125];
+const hueOf = (sid) => HUES[Math.max(0, view.data.set.sections.findIndex((s) => s.id === sid)) % HUES.length];
+
 const FILTERS = [
   ['todo', 'To answer'],
   ['blocking', 'Blocking'],
@@ -280,9 +302,11 @@ function renderSet() {
   const page = document.createElement('div');
   page.className = 'set-page';
   const head = document.createElement('header');
-  head.className = 'set-head';
-  head.innerHTML = `<h1 class="page-title">${esc(set.title)}</h1>`;
+  const project = info.projects.find((p) => p.key === view.key);
+  head.className = 'set-hero';
+  head.innerHTML = `<div class="hero-top"><div class="hero-text"><span class="eyebrow">${esc(project?.name || view.key)} · ${esc(view.setId)}</span><h1>${esc(set.title)}</h1></div><div class="hero-ring" id="hero-ring"></div></div>`;
   if (set.intro) head.append(md(set.intro, '', 'set-intro'));
+  head.insertAdjacentHTML('beforeend', '<div class="hero-stats" id="hero-stats"></div>');
   if (set.content.length) {
     const c = document.createElement('div');
     c.className = 'q-content';
@@ -314,17 +338,20 @@ function renderSet() {
 function paintTools() {
   const tools = $('set-tools');
   if (!tools) return;
-  const { c, summary } = counts();
-  const pct = summary.visible ? Math.round((summary.done / summary.visible) * 100) : 0;
+  const { c } = counts();
   const recs = acceptable(allQuestions(view.data.set)).length;
+  const searching = view.searchOpen || !!view.search;
   tools.innerHTML = `
-    <div class="progress-row"><div class="progress big"><span style="width:${pct}%"></span></div><span class="count"><b>${summary.done}</b><span class="muted">/${summary.visible} answered</span></span>${summary.blocking ? `<span class="badge danger">${summary.blocking} blocking</span>` : ''}</div>
-    <div class="filters" role="tablist">${FILTERS.filter(([f]) => f === 'todo' || f === 'all' || c[f]).map(([f, t]) => `<button class="chip${view.filter === f ? ' on' : ''}" data-filter="${f}" role="tab" aria-selected="${view.filter === f}">${t}<span class="n">${c[f]}</span></button>`).join('')}</div>
-    <div class="tool-row">
-      <label class="search-in">${icon('search', 16)}<input id="q-search" type="search" placeholder="Search questions" value="${esc(view.search)}" autocomplete="off" enterkeyhint="search" /></label>
-      <div class="seg" role="group" aria-label="View"><button class="btn small${view.mode === 'list' ? ' on' : ''}" data-mode="list" title="Every question on one page">${icon('list', 16)}<span>List</span></button><button class="btn small${view.mode === 'cards' ? ' on' : ''}" data-mode="cards" title="One question at a time">${icon('cards', 16)}<span>Cards</span></button></div>
-      <button class="icon-btn" id="set-menu" title="More" aria-label="More">${icon('more')}</button>
-    </div>`;
+    <div class="tools-row">
+      <div class="filters" role="tablist">${FILTERS.filter(([f]) => f === 'todo' || f === 'all' || c[f] || view.filter === f).map(([f, t]) => `<button class="chip${view.filter === f ? ' on' : ''}${f === 'blocking' ? ' danger' : ''}" data-filter="${f}" role="tab" aria-selected="${view.filter === f}">${t}<span class="n">${c[f]}</span></button>`).join('')}</div>
+      <div class="tools-btns">
+        <button class="icon-btn${searching ? ' on' : ''}" id="search-btn" title="Search" aria-label="Search">${icon('search', 18)}</button>
+        ${view.mode === 'cards' ? `<button class="icon-btn" data-mode="list" title="Show every question" aria-label="Show every question">${icon('list', 18)}</button>` : `<button class="icon-btn" data-mode="cards" title="One question at a time" aria-label="One question at a time">${icon('cards', 18)}</button>`}
+        <button class="icon-btn" id="set-menu" title="More" aria-label="More">${icon('more', 18)}</button>
+      </div>
+    </div>
+    <div class="search-row" ${searching ? '' : 'hidden'}><label class="search-in">${icon('search', 16)}<input id="q-search" type="search" placeholder="Search questions and options" value="${esc(view.search)}" autocomplete="off" enterkeyhint="search" /></label></div>
+    <div class="tools-progress" aria-hidden="true"><span></span></div>`;
   tools.querySelectorAll('[data-filter]').forEach(
     (b) =>
       (b.onclick = () => {
@@ -333,8 +360,11 @@ function paintTools() {
         computeShown();
         paintTools();
         paintBody();
+        const top = $('set-body').getBoundingClientRect().top + scrollY - tools.offsetHeight - 60;
+        if (scrollY > top) scrollTo({ top, behavior: 'instant' });
       }),
   );
+  tools.querySelector('.filters .on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
   tools.querySelectorAll('[data-mode]').forEach(
     (b) =>
       (b.onclick = () => {
@@ -354,7 +384,18 @@ function paintTools() {
     paintBody();
     paintFilterCounts();
   }, 200);
+  $('search-btn').onclick = () => {
+    view.searchOpen = !searching;
+    if (!view.searchOpen && view.search) {
+      view.search = '';
+      computeShown();
+      paintBody();
+    }
+    paintTools();
+    if (view.searchOpen) $('q-search').focus();
+  };
   $('set-menu').onclick = (e) => menu(e.currentTarget, recs);
+  paintProgress();
 }
 
 function paintFilterCounts() {
@@ -429,10 +470,12 @@ function paintBody() {
     const sec = document.createElement('section');
     sec.className = 'sec';
     sec.dataset.s = s.id;
+    sec.style.setProperty('--hue', hueOf(s.id));
     if (s.title || s.intro || s.content.length) {
       const h = document.createElement('header');
       h.className = 'sec-head';
-      h.innerHTML = s.title ? `<h2>${esc(s.title)}</h2>` : '';
+      const n = set.sections.filter((x) => x.title).indexOf(s) + 1;
+      h.innerHTML = s.title ? `<h2><span class="sec-num">${n}</span><span>${esc(s.title)}</span></h2>` : '';
       if (s.intro) h.append(md(s.intro, '', 'sec-intro'));
       if (s.content.length) {
         const c = document.createElement('div');
@@ -465,7 +508,8 @@ function paintSectionTools(sid) {
   const vis = s.questions.filter((q) => view.vis.question(q.id));
   const done = vis.filter((q) => isDone(view.data.answers.answers[q.id])).length;
   const recs = acceptable(s.questions).length;
-  tools.innerHTML = `<span class="muted small">${done} of ${vis.length} answered</span>${recs && !info.readOnly ? `<button class="btn small" data-accept>${icon('sparkles', 14)}Take the ${recs} recommendation${recs === 1 ? '' : 's'}</button>` : ''}`;
+  const pct = vis.length ? (done / vis.length) * 100 : 0;
+  tools.innerHTML = `<span class="sec-count"><span class="mini-bar"><span style="width:${pct}%"></span></span>${done} of ${vis.length}</span>${recs && !info.readOnly ? `<button class="ghost-btn" data-accept>${icon('sparkles', 15)}Take ${recs === 1 ? 'the recommendation' : `all ${recs} recommendations`}</button>` : ''}`;
   const b = tools.querySelector('[data-accept]');
   if (b) b.onclick = () => acceptRecommended(s.questions);
 }
@@ -473,7 +517,7 @@ function paintSectionTools(sid) {
 function emptyText() {
   const { summary } = counts();
   if (view.search) return `<div class="empty"><p>No questions match “${esc(view.search)}”.</p></div>`;
-  if (view.filter === 'todo') return `<div class="empty done-all"><div class="big-check">${icon('check', 40)}</div><h2>All answered</h2><p>${summary.done} of ${summary.visible} questions answered. The agent picks them up from here.</p></div>`;
+  if (view.filter === 'todo') return `<div class="empty done-all"><div class="big-check">${icon('check', 44)}<i></i><i></i><i></i><i></i><i></i><i></i></div><h2>All answered</h2><p>${summary.done} of ${summary.visible} questions answered. The agent picks them up from here.</p></div>`;
   return `<div class="empty"><p>Nothing here.</p></div>`;
 }
 
@@ -582,14 +626,21 @@ function patchList(changed) {
 
 function paintProgress() {
   const { c, summary } = counts();
-  const pct = summary.visible ? Math.round((summary.done / summary.visible) * 100) : 0;
-  const bar = document.querySelector('.progress.big span');
+  const pct = summary.visible ? (summary.done / summary.visible) * 100 : 0;
+  const bar = document.querySelector('.tools-progress span');
   if (bar) bar.style.width = pct + '%';
-  const count = document.querySelector('.progress-row .count');
-  if (count) count.innerHTML = `<b>${summary.done}</b><span class="muted">/${summary.visible} answered</span>`;
-  const row = document.querySelector('.progress-row');
-  row?.querySelector('.badge')?.remove();
-  if (row && summary.blocking) row.insertAdjacentHTML('beforeend', `<span class="badge danger">${summary.blocking} blocking</span>`);
+  const r = $('hero-ring');
+  if (r) r.innerHTML = ring(summary.done, summary.visible, 64);
+  const stats = $('hero-stats');
+  if (stats)
+    stats.innerHTML = [
+      `<span class="stat"><b>${summary.done}</b> of ${summary.visible} answered</span>`,
+      summary.blocking ? `<span class="badge danger">${icon('warning', 12)}${summary.blocking} blocking</span>` : '',
+      summary.changed ? `<span class="badge warn">${summary.changed} changed</span>` : '',
+      summary.later ? `<span class="badge">${summary.later} for later</span>` : '',
+      !summary.toAnswer && summary.visible ? `<span class="badge ok">${icon('check', 12)}All answered</span>` : '',
+    ].join('');
+  document.title = `${summary.toAnswer ? `(${summary.toAnswer}) ` : ''}${view.data.set.title} · questionme`;
   for (const b of document.querySelectorAll('[data-filter]')) {
     const n = b.querySelector('.n');
     if (n) n.textContent = c[b.dataset.filter];
@@ -682,7 +733,8 @@ function showCard(i) {
   const s = view.data.set.sections.find((x) => x.id === q.section);
   const pos = s.questions.filter((x) => view.vis.question(x.id)).findIndex((x) => x.id === qid) + 1;
   const total = s.questions.filter((x) => view.vis.question(x.id)).length;
-  stage.innerHTML = s.title ? `<div class="card-section"><b>${esc(s.title)}</b><span class="muted"> · ${pos} of ${total}</span></div>` : '';
+  stage.style.setProperty('--hue', hueOf(s.id));
+  stage.innerHTML = s.title ? `<div class="card-section"><span class="sec-num">${set_n(s)}</span><b>${esc(s.title)}</b><span class="muted">${pos} of ${total}</span></div>` : '';
   if (s.intro && pos === 1) stage.append(md(s.intro, '', 'sec-intro'));
   const card = renderQuestion(q, ctx, { hidden: !view.vis.question(qid) });
   card.__hidden = !view.vis.question(qid);
@@ -693,12 +745,15 @@ function showCard(i) {
   scrollTo({ top: Math.max(0, stage.getBoundingClientRect().top + scrollY - 120), behavior: 'instant' });
 }
 
+const set_n = (s) => view.data.set.sections.filter((x) => x.title).indexOf(s) + 1;
+
 function paintCardNav() {
   const nav = $('card-nav');
   if (!nav) return;
   const n = view.order.length;
   const todo = view.order.filter((id) => !isDone(view.data.answers.answers[id])).length;
-  nav.innerHTML = `<button class="btn" data-nav="-1" ${view.index <= 0 ? 'disabled' : ''}>${icon('chevron-left', 18)}<span>Back</span></button><span class="card-pos"><span><b>${n ? view.index + 1 : 0}</b> of ${n}</span><small>${todo} to answer</small></span><button class="btn primary" data-nav="1" ${view.index >= n - 1 ? 'disabled' : ''}><span>Next</span>${icon('chevron-right', 18)}</button>`;
+  const pct = n ? ((view.index + 1) / n) * 100 : 0;
+  nav.innerHTML = `<button class="nav-btn" data-nav="-1" aria-label="Back" ${view.index <= 0 ? 'disabled' : ''}>${icon('chevron-left', 22)}</button><span class="card-pos"><span><b>${n ? view.index + 1 : 0}</b> / ${n}</span><span class="mini-bar"><span style="width:${pct}%"></span></span><small>${todo} to answer</small></span><button class="nav-btn primary" data-nav="1" ${view.index >= n - 1 ? 'disabled' : ''}><span>Next</span>${icon('chevron-right', 20)}</button>`;
   nav.querySelectorAll('[data-nav]').forEach((b) => (b.onclick = () => (b.dataset.nav === '1' ? nextCard() : prevCard())));
 }
 

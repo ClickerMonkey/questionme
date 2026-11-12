@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { writeAtomic, withLock } from './store.js';
+import type { NotifyConfig } from './notify.js';
 
 export function configDir(env: NodeJS.ProcessEnv = process.env): string {
   if (env['QUESTIONME_HOME']) return path.resolve(env['QUESTIONME_HOME']);
@@ -93,10 +94,25 @@ export interface UserConfig {
   allowHosts?: string[];
   /** the name shown on answers and replies from the page */
   author?: string;
+  /** push notifications (questionme notify) */
+  notify?: NotifyConfig;
+}
+
+export function userConfigPath(): string {
+  return process.env['QUESTIONME_CONFIG'] ? path.resolve(process.env['QUESTIONME_CONFIG']) : path.join(configDir(), 'config.json');
+}
+
+/** Change your settings file (keeping what else is in it). */
+export function updateUserConfig(fn: (c: UserConfig) => void): UserConfig {
+  const c = userConfig();
+  fn(c);
+  fs.mkdirSync(path.dirname(userConfigPath()), { recursive: true });
+  writeAtomic(userConfigPath(), JSON.stringify(c, null, 2) + '\n');
+  return c;
 }
 
 export function userConfig(): UserConfig {
-  const file = process.env['QUESTIONME_CONFIG'] ? path.resolve(process.env['QUESTIONME_CONFIG']) : path.join(configDir(), 'config.json');
+  const file = userConfigPath();
   try {
     const d = JSON.parse(fs.readFileSync(file, 'utf8')) as UserConfig;
     return d && typeof d === 'object' ? d : {};

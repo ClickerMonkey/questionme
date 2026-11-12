@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { DIR, Project, StoreError } from './store.js';
@@ -21,11 +22,14 @@ import {
   register,
   runningHub,
   userConfig,
+  userConfigPath,
+  updateUserConfig,
   writeHubState,
 } from './registry.js';
 import { setSchema } from './schema.js';
 import { serveMcp } from './mcp.js';
 import { normalise } from './model.js';
+import { Notifier, linkBase, notifyConfig, notifyEnabled, send } from './notify.js';
 
 const HELP = `questionme ${version}: questions from an agent, answered on your phone, saved in the project
 
@@ -57,6 +61,8 @@ For agents (and you), in a project folder (or -C <folder>):
   questionme url [set]                                 links to the page (starts the hub if needed)
   questionme stop                                      stop the hub
   questionme projects [--forget <folder>]              the folders the hub serves
+  questionme notify [ntfy [url]|webhook <url>|link <url>|test|off]
+                                                       push notifications when agents ask (the ntfy app, or a webhook)
   questionme hook                                      one line per set with news (for a Claude Code hook)
   questionme mcp                                       the MCP server, on stdio
 
@@ -80,7 +86,7 @@ interface Args {
 }
 
 const VALUED = new Set(['-p', '--port', '-H', '--host', '--token', '--allow-host', '-C', '--folder', '--timeout', '--settle', '--count', '--ids', '--section', '--limit', '--offset', '--note', '--forget', '--questions']);
-const COMMANDS = new Set(['serve', 'init', 'list', 'show', 'answers', 'wait', 'ack', 'reply', 'validate', 'schema', 'url', 'stop', 'projects', 'hook', 'mcp', 'help']);
+const COMMANDS = new Set(['notify', 'serve', 'init', 'list', 'show', 'answers', 'wait', 'ack', 'reply', 'validate', 'schema', 'url', 'stop', 'projects', 'hook', 'mcp', 'help']);
 
 function parse(argv: string[]): Args {
   const flags = new Map<string, string | true>();
@@ -221,6 +227,8 @@ async function run(): Promise<void> {
     }
     case 'hook':
       return hook();
+    case 'notify':
+      return notify();
   }
 }
 
@@ -251,18 +259,35 @@ async function serve(): Promise<void> {
   }
 
   const time = () => new Date().toLocaleTimeString();
+  const served = solo ? () => [{ key: keyFor(root), root }] : () => keyed(projects()).filter((p) => fs.existsSync(p.root));
+  // push notifications: what's there now is seen; what agents add from here on is news
+  let listening = port;
+  const projectOf = (key: string) => {
+    const p = served().find((x) => x.key === key);
+    return p ? new Project(p.root) : undefined;
+  };
+  const notifier = new Notifier(projectOf, () => listening, token, (line) => console.log(`[${time()}] ${line}`));
+  for (const p of served()) for (const id of new Project(p.root).ids()) notifier.baseline(p.key, id);
   const running = await start({
     mode: solo ? 'solo' : 'hub',
-    projects: solo ? () => [{ key: keyFor(root), root }] : () => keyed(projects()).filter((p) => fs.existsSync(p.root)),
+    projects: served,
     ...(solo ? {} : { watchList: projectsPath() }),
     port,
     host,
     token,
     allowHosts,
     readOnly: flag('--read-only'),
-    onAnswers: (key, set, s) => console.log(`[${time()}] ${key}/${summaryLine(s)}  → npx questionme answers ${set} --new`),
-    onSet: (key, set, s) => console.log(`[${time()}] ${key}/${set}: questions ${s ? `changed (${s.visible} showing, ${s.errors} errors)` : 'removed'}`),
+    onAnswers: (key, set, s) => {
+      console.log(`[${time()}] ${key}/${summaryLine(s)}  → npx questionme answers ${set} --new`);
+      notifier.observe(key, set);
+    },
+    onSet: (key, set, s) => {
+      console.log(`[${time()}] ${key}/${set}: questions ${s ? `changed (${s.visible} showing, ${s.errors} errors)` : 'removed'}`);
+      notifier.observe(key, set);
+    },
+    onProject: (key, sets) => sets.forEach((set) => notifier.observe(key, set)),
   });
+  listening = running.port;
   if (!solo) writeHubState({ pid: process.pid, port: running.port, host, token, version, started: new Date().toISOString() });
 
   const key = solo ? keyFor(root) : keyed(projects()).find((k) => same(k.root, root))?.key;
@@ -275,6 +300,12 @@ async function serve(): Promise<void> {
     const p = new Project(root);
     for (const s of p.summaries()) console.log(`  ${summaryLine(s)}`);
   }
+  const n = notifyConfig(cfg);
+  console.log(
+    notifyEnabled(n)
+      ? `  notifications: ${[n.ntfy ? 'ntfy' : '', n.webhook ? 'webhook' : ''].filter(Boolean).join(' + ')} (questionme notify test)`
+      : '  notifications: off (questionme notify ntfy puts them on your phone)',
+  );
   if (flag('-o', '--open')) openBrowser(links(running.port, host, token, hash)[0] ?? '');
 
   const stop = () => {
@@ -369,6 +400,78 @@ function validate(): void {
     if (n.errors.length) bad++;
   }
   if (bad) process.exit(1);
+}
+
+// ── notify: push notifications to your phone ──
+
+async function notify(): Promise<void> {
+  const [what, arg] = args.pos;
+  const show = () => {
+    const n = notifyConfig();
+    console.log(`Notifications (${tildeOf(userConfigPath())}):`);
+    console.log(`  ntfy:    ${n.ntfy ?? '(off)'}`);
+    console.log(`  webhook: ${n.webhook ?? '(off)'}`);
+    console.log(`  links:   ${linkBase(n, readHub()?.port ?? 4195, '')}  (questionme notify link <url> to change)`);
+    console.log(`  batched: sent once agents have been quiet for ${n.quietSeconds ?? 20} s`);
+    if (!notifyEnabled(n)) console.log('\nTurn them on: questionme notify ntfy   (then subscribe in the ntfy app)');
+  };
+  const test = async () => {
+    const n = notifyConfig();
+    if (!notifyEnabled(n)) fail('notifications are off: questionme notify ntfy (or webhook <url>) first');
+    await send(n, {
+      title: 'questionme: notifications work',
+      message: "You'll get one when an agent has new questions for you.",
+      url: linkBase(n, readHub()?.port ?? 4195, ''),
+      project: '',
+      set: '',
+      newQuestions: 0,
+      blocking: 0,
+      replies: 0,
+    });
+    console.log('Sent a test notification.');
+  };
+  switch (what) {
+    case undefined:
+      return show();
+    case 'ntfy': {
+      const url = arg ?? `https://ntfy.sh/questionme-${crypto.randomBytes(9).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      if (!/^https?:\/\/[^/]+\/[^/]+/.test(url)) fail('an ntfy topic URL looks like https://ntfy.sh/your-topic');
+      updateUserConfig((c) => (c.notify = { ...c.notify, ntfy: url }));
+      console.log(`✓ ntfy topic: ${url}`);
+      console.log('  On your phone: install the ntfy app (Android or iOS), tap +, and subscribe to');
+      console.log(`  the topic "${new URL(url).pathname.slice(1)}"${new URL(url).host === 'ntfy.sh' ? '' : ` on the server ${new URL(url).origin}`}.`);
+      console.log('  Anyone who knows the topic can read it: notifications say which set has questions, never the answers.');
+      return test();
+    }
+    case 'webhook':
+      if (!arg || !/^https?:\/\//.test(arg)) fail('questionme notify webhook <https://…>');
+      updateUserConfig((c) => (c.notify = { ...c.notify, webhook: arg }));
+      console.log(`✓ webhook: ${arg}`);
+      return test();
+    case 'link':
+      if (!arg || !/^https?:\/\//.test(arg)) fail('questionme notify link <http://host:port> (where your phone opens questionme)');
+      updateUserConfig((c) => (c.notify = { ...c.notify, link: arg }));
+      return show();
+    case 'test':
+      return test();
+    case 'off':
+      updateUserConfig((c) => {
+        if (c.notify) {
+          delete c.notify.ntfy;
+          delete c.notify.webhook;
+        }
+      });
+      return void console.log('Notifications are off.');
+  }
+  fail(`questionme notify [ntfy [url]|webhook <url>|link <url>|test|off]`);
+}
+
+function readHub() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(configDir(), 'hub.json'), 'utf8')) as { port: number };
+  } catch {
+    return undefined;
+  }
 }
 
 // ── hook: news for Claude Code, one line per set (nothing when there's nothing) ──

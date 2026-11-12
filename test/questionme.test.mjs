@@ -350,3 +350,44 @@ test('the MCP server: initialize, tools, add questions, read answers', async () 
     await new Promise((r) => child.on('exit', r));
   }
 });
+
+test('notifications: an agent adding questions and replying makes one batched webhook call', async () => {
+  const got = [];
+  const hook = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (c) => (b += c));
+    req.on('end', () => {
+      got.push(JSON.parse(b));
+      res.end('ok');
+    });
+  });
+  await new Promise((r) => hook.listen(0, '127.0.0.1', r));
+  const nhome = path.join(tmp, 'nhome');
+  fs.mkdirSync(nhome, { recursive: true });
+  fs.writeFileSync(path.join(nhome, 'config.json'), JSON.stringify({ notify: { webhook: `http://127.0.0.1:${hook.address().port}/`, quietSeconds: 1, link: 'http://phone.test:4195' } }));
+  const root = path.join(tmp, 'notify');
+  const p = new Project(root);
+  p.addQuestions('plan', [{ id: 'old', question: 'Already here?' }]);
+  const child = spawn(process.execPath, [cli, '--solo', root, '--local', '--port', '0'], { env: { ...process.env, QUESTIONME_HOME: nhome }, stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    await new Promise((r) => child.stdout.once('data', r));
+    await new Promise((r) => setTimeout(r, 400));
+    p.addQuestions('plan', [{ id: 'a', question: 'First new one?', blocking: true }]);
+    await new Promise((r) => setTimeout(r, 300));
+    p.addQuestions('plan', [{ id: 'b', question: 'Second new one?' }]);
+    p.message('plan', 'old', 'agent', 'A reply.');
+    const until = Date.now() + 8000;
+    while (!got.length && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.equal(got.length, 1, JSON.stringify(got));
+    assert.equal(got[0].newQuestions, 2);
+    assert.equal(got[0].blocking, 1);
+    assert.equal(got[0].replies, 1);
+    assert.match(got[0].title, /plan: 2 new questions, 1 reply from the agent/);
+    assert.equal(got[0].url, 'http://phone.test:4195/#/p/notify/s/plan');
+    assert.match(got[0].message, /“First new one\?” and 1 more/);
+  } finally {
+    child.kill();
+    hook.close();
+  }
+});

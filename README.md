@@ -72,6 +72,7 @@ npx questionme reply <set> <id> "Because the API bills per call."
 npx questionme validate                          # check every set against the format
 npx questionme schema                            # the format, as JSON Schema
 npx questionme hook                              # one line per set with news (for a Claude Code hook; silent otherwise)
+npx questionme notify ntfy                       # push notifications to your phone (see below)
 ```
 
 `wait` is the seamless part: an agent starts it as a background command, carries on, and is woken when it exits.
@@ -176,6 +177,7 @@ it) and in `get_answers`.
   card you just answered doesn't jump away.
 - **Search** across questions and options.
 - **Take the recommendations** for a section, or the whole set, then change the few you disagree with.
+- **Colour per section**, numbered questions, a progress ring and bar, and a small celebration when you finish.
 - **Live:** the agent's new questions, replies and "applied" notes appear as they happen, and so do answers from your
   other devices.
 - Light and dark, a link to any question, and a prompt you can copy for the agent.
@@ -204,12 +206,34 @@ npx questionme --solo [folder] # just this folder, on its own server
 | `-o, --open` | | | Open it in your browser. |
 | `--read-only` | | | Look, don't answer. |
 
-Your settings can also go in `~/.config/questionme/config.json` (`port`, `host`, `token` (or `false`), `allowHosts`).
+Your settings can also go in `~/.config/questionme/config.json` (`port`, `host`, `token` (or `false`), `allowHosts`,
+`notify`).
 `QUESTIONME_HOME` moves that folder. It also holds `projects.json` (the hub's list), `hub.json` (where it's running),
 `token`, and `hub.log`.
 
 The links include every address your phone might use: your Wi-Fi or LAN address, and a Tailscale address if you have
 one. Virtual adapters (WSL, Docker, VMs) are left out.
+
+## Notifications on your phone
+
+The hub can buzz your phone when an agent adds questions or replies on a thread. Tapping the notification opens the set.
+
+```sh
+npx questionme notify ntfy             # makes a private ntfy topic, saves it, and sends a test
+npx questionme notify webhook <url>    # or POST JSON anywhere: Pushover, Discord, Home Assistant, …
+npx questionme notify link http://100.100.4.74:4195   # where the tap should open (default: Tailscale, else your LAN)
+npx questionme notify test | off       # send a test, or stop
+```
+
+For ntfy, install the [ntfy app](https://ntfy.sh) (Android or iOS) and subscribe to the topic it prints. Changes are
+batched: an agent adding 50 questions over a minute sends one notification ("Weather app: 50 new questions, 3
+blocking"), once it has been quiet for 20 seconds (`quietSeconds` in the config) or two minutes have passed.
+Notifications name the set and quote the first new question, never your answers. Links leave out the token unless you
+set `includeToken`: open questionme once on your phone and its cookie does the rest.
+
+The webhook gets `{ title, message, url, project, set, newQuestions, blocking, replies }`.
+
+Why not Web Push: a phone only allows it on HTTPS pages, and questionme is opened over plain http on your network.
 
 ## Safety
 

@@ -116,7 +116,8 @@ function inner(b) {
       f.setAttribute('referrerpolicy', 'no-referrer');
       f.style.height = b.height + 'px';
       f.title = b.title || 'Mockup';
-      lazy(f, () => (f.srcdoc = b.html));
+      // no stray page margin around a mockup (its own styles still win)
+      lazy(f, () => (f.srcdoc = '<style>html,body{margin:0;min-height:100%}</style>' + b.html));
       return f;
     }
     case 'link': {
