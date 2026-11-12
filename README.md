@@ -270,8 +270,9 @@ npm run dev -- --solo .questionme-test/demo --local   # after: node scripts/demo
 npm run screenshots      # the README's screenshots, from the demo project
 ```
 
-Releasing: bump the version, `npm test`, commit, push, then push a `v<version>` tag. The Release workflow publishes to
-npm with trusted publishing.
+Releasing: bump the version in `package.json` (`npm version patch --no-git-tag-version`), commit, push to main. The
+Release workflow sees a version that isn't on npm yet, runs the tests, publishes it with trusted publishing, then tags
+the commit `v<version>` and makes a GitHub release.
 
 ## License
 

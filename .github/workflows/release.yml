@@ -1,21 +1,27 @@
-# Publishes questionme to npm with trusted publishing (no stored token): run it from the Actions tab, or push a
-# v* tag. Bump the version in package.json first, and run `npm test` locally (the tests need git and a browser-free
-# Node, but they are run before releasing, not here).
+# Publishes questionme to npm with trusted publishing (no stored token), automatically: bump the version in
+# package.json and push to main. If that version isn't on npm yet, this tests, builds and publishes it (with
+# provenance), then tags the commit v<version> and makes a GitHub release. Pushes that don't change the version do
+# nothing. It can also be run from the Actions tab (dry run: pack and check, don't publish).
 name: Release
 
 on:
+  push:
+    branches: [main]
+    paths: [package.json]
   workflow_dispatch:
     inputs:
       dry_run:
         description: Pack and check, but don't publish
         type: boolean
         default: false
-  push:
-    tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write # the tag and the release
   id-token: write # trusted publishing and provenance
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -29,8 +35,31 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm install -g npm@^11.5.1
-      - run: npm ci
-      - run: npm run build
-      - run: npm pack --dry-run
-      - if: ${{ !inputs.dry_run }}
+      - name: Is this version new?
+        id: version
+        run: |
+          v=$(node -p "require('./package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if npm view "questionme@$v" version >/dev/null 2>&1; then
+            echo "questionme@$v is already on npm: nothing to publish"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.version.outputs.new == 'true'
+        run: npm ci
+      - if: steps.version.outputs.new == 'true'
+        run: npm test
+      - if: steps.version.outputs.new == 'true'
+        run: npm pack --dry-run
+      - if: steps.version.outputs.new == 'true' && !inputs.dry_run
         run: npm publish --provenance --access public
+      - if: steps.version.outputs.new == 'true' && !inputs.dry_run
+        name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          git tag "v$V"
+          git push origin "v$V"
+          gh release create "v$V" --title "v$V" --generate-notes
