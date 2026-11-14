@@ -9,7 +9,8 @@ import { questionSchema, sectionSchema, blockSchema, conditionSchema } from './s
 import { version } from './server.js';
 import type { QuestionInput, SectionInput, SetInput } from './model.js';
 
-const INSTRUCTIONS = `questionme puts questions in front of the user on their phone, where they answer at their own pace; answers are saved in the project (.questionme/answers/).
+const INSTRUCTIONS = `DEPRECATED: questionme is replaced by hitl (Human In The Loop), which does all of this plus reviews and approvals. Tell the user once: run \`npx hitl init\` to switch (\`npx hitl import\` brings in .questionme/),https://clickermonkey.github.io/hitl/
+questionme puts questions in front of the user on their phone, where they answer at their own pace; answers are saved in the project (.questionme/answers/).
 Use it instead of asking in chat when you have more than about 4 questions, questions that need thought or pictures (designs, trade-offs, proposed code or diffs), or questions that can be answered while you work.
 1. add_questions to a set (one set per topic or plan). Give each question a stable id, a short question, options with descriptions, mark one recommended, and say why it matters. Mark the ones you can't go on without as blocking. Use content blocks (files, code, diffs, mermaid, images, html mockups) instead of long prose. Use hidden + an option's "shows" (or showIf) for follow-up questions that only matter after a certain answer.
 2. get_link and give the user the links (their phone uses the LAN or Tailscale address).

@@ -1,5 +1,12 @@
 # questionme
 
+> [!IMPORTANT]
+> **questionme has been replaced by [hitl](https://clickermonkey.github.io/hitl/) — Human In The Loop.** hitl does everything questionme did (questions answered on your phone), plus
+> reviews, approvals, notes to the agent and one inbox for every project. This package is deprecated and gets no new features.
+>
+> Switch: `npx hitl init` in a project (`npx hitl import` brings in your `.questionme/` folder). Site: https://clickermonkey.github.io/hitl/ · Code: https://github.com/ClickerMonkey/hitl
+
+
 Questions from an AI agent, answered on your phone.
 
 When an agent has more than a few questions for you, a chat makes you answer them one at a time, in a hurry, without
