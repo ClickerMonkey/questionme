@@ -123,7 +123,7 @@ function parse(argv: string[]): Args {
 
 // questionme is deprecated: hitl (Human In The Loop) replaces it and does everything it does. Said on every run, on stderr
 // (so it never mixes with output a script or an MCP client reads).
-if (!process.env['QUESTIONME_NO_DEPRECATION']) process.stderr.write('\n  questionme is deprecated: hitl (Human In The Loop) replaces it and does everything questionme does, plus reviews,\n  approvals and one inbox. Switch: npx hitloop init   (npx hitloop import brings in your .questionme/ folder)\n  https://clickermonkey.github.io/hitl/\n\n');
+if (!process.env['QUESTIONME_NO_DEPRECATION']) process.stderr.write('\n  questionme is deprecated: hitl (Human In The Loop) replaces it and does everything questionme does, plus reviews,\n  approvals and one inbox. Switch: npx hitloop init   (npx hitloop import brings in your .questionme/ folder)\n  https://clickermonkey.github.io/hitloop/\n\n');
 const args = parse(process.argv.slice(2));
 const flag = (...names: string[]) => names.some((n) => args.flags.has(n));
 const value = (...names: string[]) => {

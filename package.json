@@ -1,6 +1,6 @@
 {
   "name": "questionme",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Deprecated: replaced by hitl (Human In The Loop, npx hitloop), which does everything questionme does. Questions from an LLM agent, answered on your phone: hundreds at a time, with rich content (files, code, diffs, diagrams, mockups), branching follow-ups, and answers saved in the project where the agent reads only what's new. A web page, a CLI and an MCP server.",
   "type": "module",
   "bin": {
